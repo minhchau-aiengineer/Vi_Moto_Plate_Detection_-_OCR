@@ -13,8 +13,16 @@ from datetime import datetime
 st.set_page_config(page_title="Test Biển Số", layout="centered")
 st.markdown(
     """
-    <h1 style='text-align: center; color: #fff; background: linear-gradient(90deg, #1e90ff, #00c6ff); width: 800px; padding: 16px; border-radius: 12px; font-weight: bold; box-shadow: 0 2px 8px rgba(30,144,255,0.2);'>
-        TEST PHÁT HIỆN & TRÍCH XUẤT BIỂN SỐ  LƯU SQL SERVER
+    <h1 style='
+    text-align: center; 
+    color: #fff; 
+    background: linear-gradient(90deg, #1e90ff, #00c6ff); 
+    width: 800px; 
+    padding: 16px; 
+    border-radius: 12px; 
+    font-weight: bold; 
+    box-shadow: 0 2px 8px rgba(30,144,255,0.2);'>
+    TEST PHÁT HIỆN & TRÍCH XUẤT BIỂN SỐ  LƯU SQL SERVER
     </h1>
     """, 
     unsafe_allow_html=True)

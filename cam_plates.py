@@ -342,7 +342,7 @@ def safe_markdown(ph, html):
         ph.empty()
 
 # ============== GIAO DIỆN CHÍNH ==============
-st.title("------------------------ Phát hiện & OCR biển số xe -----------------------------")
+st.title("------------------------ Phát hiện & OCR biển số xe ---------------------------------")
 t1, t2 = st.columns(2, gap="small")
 b1, b2 = st.columns(2, gap="small")
 with t1: ph_cam1 = st.empty()   # 1) Cam 1 (Vào)

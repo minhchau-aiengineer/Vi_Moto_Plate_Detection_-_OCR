@@ -13,29 +13,37 @@ SAVE_DIR = "images"; os.makedirs(SAVE_DIR, exist_ok=True)
 USE_SQL = True
 CONN_STR = (
     "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=localhost;DATABASE=plates_db;UID=sa;PWD=123456"
+    "SERVER=localhost;"
+    "DATABASE=plates_db;"
+    "UID=sa;"
+    "PWD=123456"
 )
 
 PANEL_W, PANEL_H = 640, 360
-PANEL_BG = (232, 239, 248)  # BGR
+PANEL_BG = (232, 239, 248)  
 STABLE_SECONDS_IN  = 1.2
 STABLE_SECONDS_OUT = 1.2
 
 # ============== SIDEBAR ==============
 with st.sidebar:
-    st.subheader("Điều khiển camera")
-    st.caption("Chỉnh index/backend nếu cam không mở được.")
+    st.subheader("Config camera")
 
+    # Chọn cam
     cidx1, cidx2 = st.columns(2)
     with cidx1:
         cam1_idx = st.number_input("Index Cam 1", min_value=0, max_value=9, value=0, step=1)
     with cidx2:
-        cam2_idx = st.number_input("Index Cam 2", min_value=0, max_value=9, value=1, step=1)
+        cam2_idx = st.number_input("Index Cam 2", min_value=0, max_value=9, value=0, step=1)
 
+    # Chọn backend
     api_map = {"DSHOW(Windows)": cv2.CAP_DSHOW, "MSMF(Windows)": cv2.CAP_MSMF, "ANY": cv2.CAP_ANY}
     api1 = st.selectbox("Backend Cam 1", list(api_map.keys()), index=0)
     api2 = st.selectbox("Backend Cam 2", list(api_map.keys()), index=0)
+    st.caption("Chỉnh index/backend nếu cam không mở được.")
 
+    # Bật/tắt cam
+    st.markdown("---")
+    st.subheader("Funtion camera")
     c1, c2 = st.columns(2)
     with c1:
         start_cam1 = st.button("Bật Cam 1", use_container_width=True)
@@ -48,12 +56,13 @@ with st.sidebar:
     with c4:
         stop_cam2  = st.button("Tắt Cam 2", use_container_width=True)
 
-# states
+# ============== STATE ==============
 if "cam1_on" not in st.session_state: st.session_state.cam1_on = False
 if "cam2_on" not in st.session_state: st.session_state.cam2_on = False
 if "cap1" not in st.session_state:    st.session_state.cap1 = None
 if "cap2" not in st.session_state:    st.session_state.cap2 = None
 
+# Đóng camera
 def close_cap(name):
     try:
         if st.session_state.get(name):
@@ -62,19 +71,21 @@ def close_cap(name):
         pass
     st.session_state[name] = None
 
+# ============== Xử lý bật/tắt cam ==============
+# Cam 1
 if start_cam1 and not st.session_state.cam1_on:
     st.session_state.cam1_on = True
 if stop_cam1:
     st.session_state.cam1_on = False
     close_cap("cap1")
-
+# Cam 2
 if start_cam2 and not st.session_state.cam2_on:
     st.session_state.cam2_on = True
 if stop_cam2:
     st.session_state.cam2_on = False
     close_cap("cap2")
 
-# ============== STATE ==============
+# ============== Thông tin biển số ==============
 # VÀO (Cam 1)
 st.session_state.setdefault("date_in", "--/--/----")
 st.session_state.setdefault("time_in", "--:--:--")
@@ -85,8 +96,8 @@ st.session_state.setdefault("time_out", "--:--:--")
 st.session_state.setdefault("plate_text_out", "---")
 
 # ROI riêng cho từng camera để hiển thị trong "Thông tin chi tiết"
-st.session_state.setdefault("roi_in_path", "")   # ROI Cam 1 (Vào)
-st.session_state.setdefault("roi_out_path", "")  # ROI Cam 2 (Ra)
+st.session_state.setdefault("roi_in_path", "")   
+st.session_state.setdefault("roi_out_path", "")  
 
 # Ảnh chụp gần nhất (cho Ô3/Ô4)
 st.session_state.setdefault("scene_path", "")
@@ -98,10 +109,11 @@ st.session_state.setdefault("stable_start_out", 0.0)
 st.session_state.setdefault("captured_in", False)
 st.session_state.setdefault("captured_out", False)
 
+# Lịch sử
 st.session_state.setdefault("hist_tick", 0)
 st.session_state.setdefault("match_text", "")
 
-# ============== HELPERS ==============
+# ============== HÀM TIỆN ÍCH ==============
 def letterbox(img, w=PANEL_W, h=PANEL_H, color=PANEL_BG):
     if img is None: return np.full((h, w, 3), color, dtype=np.uint8)
     ih, iw = img.shape[:2]
@@ -113,6 +125,7 @@ def letterbox(img, w=PANEL_W, h=PANEL_H, color=PANEL_BG):
     canvas[top:top+nh, left:left+nw] = resized
     return canvas
 
+# ============== Vẽ title cho từng ô ==============
 def draw_title(img, text):
     img = img.copy()
     x1,y1,x2,y2 = 12,12, min(PANEL_W-12, 12+340), 52
@@ -121,13 +134,16 @@ def draw_title(img, text):
     cv2.putText(img, text,(x1+6,y2-10), cv2.FONT_HERSHEY_SIMPLEX,0.8,(80,80,80),2, cv2.LINE_AA)
     return img
 
+# ============== Hiển thị ảnh ==============
 def show(ph, bgr, title):
     frame = letterbox(bgr); frame = draw_title(frame, title)
     ph.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), width=PANEL_W)
 
+# ============== Hiển thị ảnh trống ==============
 def show_blank(ph, title):
     show(ph, np.full((PANEL_H, PANEL_W, 3), PANEL_BG, dtype=np.uint8), title)
 
+# ============== MỞ CAM ==============
 def open_cam(idx=0, api=cv2.CAP_DSHOW):
     cap = cv2.VideoCapture(int(idx), api)
     if not (cap and cap.isOpened()):
@@ -140,14 +156,16 @@ def open_cam(idx=0, api=cv2.CAP_DSHOW):
     except: pass
     return cap
 
-# ============== SQL ==============
+# ============== KẾT NỐI SQL ==============
 cur = None; conn = None; sql_err = ""
 if USE_SQL:
     try:
         import pyodbc
         conn = pyodbc.connect(CONN_STR, autocommit=True)
         cur  = conn.cursor()
-        # 1 bảng duy nhất cho mỗi phiên
+
+        # Mỗi phiên có thể chỉ có IN hoặc chỉ có OUT
+        # Nếu có IN thì match_status='PENDING' -> sau khi có OUT sẽ thành
         cur.execute("""
             IF OBJECT_ID('dbo.ParkingSessions','U') IS NULL
             CREATE TABLE dbo.ParkingSessions(
@@ -171,24 +189,30 @@ if USE_SQL:
         sql_err = f"Không kết nối SQL: {e}"
         USE_SQL = False
 
-# ============== MODELS ==============
+# ============== LOAD MODEL ==============
 @st.cache_resource(show_spinner=True)
 def load_yolo(path): return YOLO(path)
 
+# Load model
 load_ok, load_err = True, ""
+
+# nếu model lỗi thì vẫn chạy app, nhưng không detect/ocr được
 try:
     detect_model = load_yolo(DETECT_MODEL_PATH)
     ocr_model    = load_yolo(OCR_MODEL_PATH)
 except Exception as e:
     load_ok, load_err = False, str(e)
 
+# ============== XỬ LÝ ẢNH & OCR ==============
 def has_boxes(r):
     try: return hasattr(r,"boxes") and r.boxes is not None and len(r.boxes)>0
     except: return False
 
+# ============== Chuẩn hoá ký tự OCR ==============
 OCR_MAP = {"zero":"0","one":"1","two":"2","three":"3","four":"4","five":"5","six":"6","seven":"7","eight":"8","nine":"9"}
 def norm_char(x): return OCR_MAP.get(str(x), str(x))
 
+# ============== Xử lý ảnh trước khi OCR ==============
 def preprocess_for_ocr(roi):
     if roi is None: return None
     if roi.shape[-1]==4: roi = cv2.cvtColor(roi, cv2.COLOR_BGRA2BGR)
@@ -197,6 +221,7 @@ def preprocess_for_ocr(roi):
     blur = cv2.GaussianBlur(clahe,(3,3),0)
     return cv2.cvtColor(blur, cv2.COLOR_GRAY2BGR)
 
+# ============== Xử lý biển số ==============
 def detect_plates(frame):
     plates, boxed = [], frame.copy()
     for r in detect_model(frame):
@@ -212,16 +237,21 @@ def detect_plates(frame):
             cv2.putText(boxed,"License Plate",(x1,max(0,y1-6)),cv2.FONT_HERSHEY_SIMPLEX,0.6,(0,255,0),2)
     return plates, boxed
 
+# ============== OCR biển số ==============
 def ocr_plate(roi):
     roi_pre = preprocess_for_ocr(roi)
     res = ocr_model(roi_pre if roi_pre is not None else roi)
     text_raw=""
+
+    # Nối ký tự biển số
     for r in res:
         if not has_boxes(r): continue
         names = getattr(r,'names',None) or getattr(ocr_model,'names',{}) or {}
         clses = r.boxes.cls.cpu().numpy().astype(int)
         xyxys= r.boxes.xyxy.cpu().numpy()
         boxes=[]
+
+        # Lấy ký tự hợp lệ
         for i,cls in enumerate(clses):
             x1,y1,x2,y2 = xyxys[i]
             cx=(x1+x2)/2.0; cy=(y1+y2)/2.0
@@ -230,6 +260,8 @@ def ocr_plate(roi):
                 boxes.append((cy,cx,ch))
         if not boxes: continue
         ys=[b[0] for b in boxes]
+        
+        # Nối chuỗi biển số
         if len(boxes)<=7 or (max(ys)-min(ys) < 0.2*max(ys, default=1)):
             text_raw=''.join([b[2] for b in sorted(boxes,key=lambda b:b[1])])
         else:
@@ -242,16 +274,18 @@ def ocr_plate(roi):
     text_fmt = f"{raw[:2]}-{raw[2:4]} {raw[4:]}" if len(raw)>=7 else (text_raw or "")
     return text_fmt, (text_raw or "")
 
+# ============== LƯU ẢNH ==============
 def save_image(img, prefix):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     path = os.path.join(SAVE_DIR, f"{prefix}_{ts}.jpg")
     cv2.imwrite(path, img); return path
 
-# ======= MATCHING =======
+# ============== XỬ LÝ DỮ LIỆU VÀO/RA ==============
 def plate_norm(s: str) -> str:
     """Chuẩn hoá biển để so khớp: bỏ khoảng trắng/gạch, upper-case."""
     return (s or "").replace("-", "").replace(" ", "").upper()
 
+# ============== INSERT phiên mới khi có 'Vào' ==============
 def session_insert_in(plate, d, t, img_path):
     """Tạo 1 phiên mới khi có 'Vào'."""
     if not USE_SQL: return
@@ -263,6 +297,7 @@ def session_insert_in(plate, d, t, img_path):
     except Exception:
         pass
 
+# ============== GHÉP phiên khi có 'Ra' ==============
 def session_attach_out(plate_out, d, t, img_path):
     """Gắn 'Ra' vào phiên 'Vào' gần nhất cùng biển (sau chuẩn hoá)."""
     if not USE_SQL: return "Khong khop bien so"
@@ -273,12 +308,15 @@ def session_attach_out(plate_out, d, t, img_path):
             ORDER BY id DESC
         """).fetchall()
         match_sid = None
+
+        # Tìm phiên 'Vào' gần nhất có biển khớp
         for r in rows:
             sid, plate_in = r
             if plate_norm(plate_in) == plate_norm(plate_out):
                 match_sid = sid
                 break
 
+        # Cập nhật phiên
         if match_sid:
             cur.execute("""
                 UPDATE dbo.ParkingSessions
@@ -294,15 +332,17 @@ def session_attach_out(plate_out, d, t, img_path):
             return "Khong khop bien so"
     except Exception:
         return "Khong khop bien so"
+    
 
+# ============== HIỂN THỊ HTML AN TOÀN ==============
 def safe_markdown(ph, html):
     if html:
         ph.markdown(html, unsafe_allow_html=True)
     else:
         ph.empty()
 
-
-# ============== 4 Ô ==============
+# ============== GIAO DIỆN CHÍNH ==============
+st.title("------------------------ Phát hiện & OCR biển số xe -----------------------------")
 t1, t2 = st.columns(2, gap="small")
 b1, b2 = st.columns(2, gap="small")
 with t1: ph_cam1 = st.empty()   # 1) Cam 1 (Vào)
@@ -310,6 +350,8 @@ with t2: ph_cam2 = st.empty()   # 2) Cam 2 (Ra)
 with b1: ph_scene = st.empty()  # 3) Ảnh toàn cảnh đã chụp + BOX (lần chụp gần nhất)
 with b2: ph_roi   = st.empty()  # 4) ROI biển số (lần chụp gần nhất)
 
+
+# Nếu model lỗi thì không chạy tiếp
 if not load_ok:
     show_blank(ph_cam1, "1) Cam 1")
     show_blank(ph_cam2, f"2) Error_model: {load_err}")
@@ -318,10 +360,9 @@ if not load_ok:
     if sql_err: st.warning(sql_err)
     st.stop()
 
-# ============== THÔNG TIN CHI TIẾT ==============
+# ============== Thông tin chi tiết ==============
 st.markdown("---")
-st.markdown("## ---------------------------------------- Thông tin chi tiết ----------------------------------------")
-
+st.markdown("## ----------------------------------------------- Thông tin chi tiết -----------------------------------------------")
 st.markdown("""
 <style>
 .info-label{font-size:14px;color:#475569;margin:2px 0 4px 2px}
@@ -334,6 +375,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Chia 2 cột: Vào (Cam 1) | Ra (Cam 2)
 col_in, col_out = st.columns(2, gap="large")
 
 with col_in:
@@ -341,17 +383,20 @@ with col_in:
     date_in_box  = st.empty()
     time_in_box  = st.empty()
     plate_in_box = st.empty()
-    roi_in_box   = st.empty()   # ROI Cam 1
+    roi_in_box   = st.empty()   
 
 with col_out:
     st.write("#### Ra (Cam 2)")
     date_out_box  = st.empty()
     time_out_box  = st.empty()
     plate_out_box = st.empty()
-    roi_out_box   = st.empty()  # ROI Cam 2
+    roi_out_box   = st.empty() 
 
+# Cột dưới cùng để hiển thị kết quả so khớp biển số 
 match_box = st.empty()
 
+
+# ============== Hàm hiển thị thông tin chi tiết ==============
 def render_info():
     date_in_box.markdown(
         f"<div class='info-section'><div class='info-label'>Ngày vào</div>"
@@ -373,7 +418,7 @@ def render_info():
         f"<div class='info-section'><div class='info-label'>Biển số xe</div>"
         f"<div class='info-card plate'>{st.session_state.plate_text_out}</div></div>", unsafe_allow_html=True)
 
-    # Hiển thị ROI theo từng cam ngay trong phần Thông tin chi tiết
+    # Ảnh ROI riêng cho từng camera
     if st.session_state.roi_in_path and os.path.exists(st.session_state.roi_in_path):
         roi_in_box.image(st.session_state.roi_in_path, caption="ROI Cam 1 (Vào)", width=280, use_container_width=False)
     else:
@@ -391,11 +436,11 @@ def render_info():
 
 render_info()
 
-# ============== LỊCH SỬ (1 bảng) ==============
-st.markdown("---")
-st.markdown("## Thông tin bảng Plates (Vào ↔ Ra)")
+# ============== Lịch sử bảng Plates ==============
+st.markdown("## -------------------------------------------- Thông tin bảng Plates -------------------------------------------")
 history_box = st.empty()
 
+# Làm mới bảng lịch sử
 def refresh_history():
     if USE_SQL:
         try:
@@ -421,7 +466,8 @@ def refresh_history():
 
 refresh_history()
 
-# ============== LOOP ==============
+# ============== VÒNG LẶP CHÍNH ==============
+# Đọc frame từ camera
 def read_frame(cap):
     if cap is None or (not cap.isOpened()):
         return None
@@ -430,6 +476,7 @@ def read_frame(cap):
         return None
     return f
 
+# Đảm bảo camera đã mở
 def ensure_cap(which):
     """Mở camera theo lựa chọn sidebar."""
     if which == 1:
@@ -441,11 +488,14 @@ def ensure_cap(which):
             st.session_state.cap2 = open_cam(cam2_idx, api_map[api2])
             if st.session_state.cap2 is None: st.session_state.cam2_on = False
 
+# Xử lý luồng video từ cam 1 (Vào) hoặc cam 2 (Ra)
 def process_stream(frame, mode="in"):
     """
     mode = 'in'  -> cập nhật cột Vào + ParkingSessions (insert hàng mới, PENDING)
     mode = 'out' -> cập nhật cột Ra  + ghép với 'Vào' (KHỚP/ KHÔNG KHỚP)
     """
+
+    # Nếu không có frame thì reset ổn định
     if frame is None:
         if mode == "in":
             st.session_state.stable_start_in = 0.0
@@ -455,6 +505,7 @@ def process_stream(frame, mode="in"):
             st.session_state.captured_out = False
         return
 
+    # Phát hiện biển số
     plates, boxed = detect_plates(frame)
     if not plates:
         if mode == "in":
@@ -468,6 +519,7 @@ def process_stream(frame, mode="in"):
     best = max(plates, key=lambda it:(it[0][2]-it[0][0])*(it[0][3]-it[0][1]))
     roi_current = best[1]
 
+    # Xử lý ổn định & OCR
     if mode == "in":
         if st.session_state.stable_start_in == 0.0 or st.session_state.captured_in:
             st.session_state.stable_start_in = time.time()
@@ -496,7 +548,8 @@ def process_stream(frame, mode="in"):
                 refresh_history()
                 st.session_state.captured_in = True
 
-    else:  # mode == "out"
+    # Xử lý cam 2 (Ra)
+    else:  
         if st.session_state.stable_start_out == 0.0 or st.session_state.captured_out:
             st.session_state.stable_start_out = time.time()
             st.session_state.captured_out = False
@@ -527,7 +580,8 @@ def process_stream(frame, mode="in"):
 
                 st.session_state.captured_out = True
 
-# ===== HIỂN THỊ & VÒNG LẶP =====
+# ============== VÒNG LẶP CHÍNH ==============
+# Nếu có cam nào đang bật thì đọc frame từ cam đó
 if st.session_state.cam1_on or st.session_state.cam2_on:
     try:
         while st.session_state.cam1_on or st.session_state.cam2_on:
@@ -551,6 +605,8 @@ if st.session_state.cam1_on or st.session_state.cam2_on:
         close_cap("cap1"); close_cap("cap2")
         st.session_state.cam1_on = False
         st.session_state.cam2_on = False
+
+# Nếu không có cam nào bật thì hiển thị trống
 else:
     show_blank(ph_cam1,"1) Cam 1")
     show_blank(ph_cam2,"2) Cam 2")
@@ -563,5 +619,6 @@ else:
     else:
         show_blank(ph_roi,"4) ROI_Plates")
 
+# Thông báo lỗi SQL
 if sql_err:
     st.warning(sql_err)

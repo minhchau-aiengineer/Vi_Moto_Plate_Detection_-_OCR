@@ -6,7 +6,7 @@ from ultralytics import YOLO
 st.set_page_config(page_title="Detecting & OCR", layout="wide")
 
 DETECT_MODEL_PATH = r"D:/Documents/IUH_Student/OCR/model/detection_plates/license_plate_detector.pt"
-OCR_MODEL_PATH    = r"D:/Documents/IUH_Student/OCR/model/ocr_plates/Tong_Hop_4_Dataset.pt"
+OCR_MODEL_PATH    = r"D:/Documents/IUH_Student/OCR/model/ocr_plates/epoch199.pt"
 
 SAVE_DIR = "images"; os.makedirs(SAVE_DIR, exist_ok=True)
 

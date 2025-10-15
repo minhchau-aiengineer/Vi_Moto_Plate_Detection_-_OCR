@@ -6,7 +6,7 @@ from ultralytics import YOLO
 st.set_page_config(page_title="Detecting & OCR", layout="wide")
 
 DETECT_MODEL_PATH = r"D:/Documents/IUH_Student/OCR/model/detection_plates/license_plate_detector.pt"
-OCR_MODEL_PATH    = r"D:/Documents/IUH_Student/OCR/model/ocr_plates/best.pt"
+OCR_MODEL_PATH    = r"D:/Documents/IUH_Student/OCR/model/ocr_plates/Tong_Hop_4_Dataset.pt"
 
 SAVE_DIR = "images"; os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -451,18 +451,27 @@ def refresh_history():
                 FROM dbo.ParkingSessions
                 ORDER BY id DESC
             """).fetchall()
+
             df = pd.DataFrame.from_records(
                 rows,
-                columns=["ID","Ảnh vào","Biển số vào","Ngày vào","Giờ vào",
-                         "Ảnh ra","Biển số ra","Ngày ra","Giờ ra","So khớp biển số xe"]
+                columns=[
+                    "ID","Ảnh vào","Biển số vào","Ngày vào","Giờ vào",
+                    "Ảnh ra","Biển số ra","Ngày ra","Giờ ra","Trạng thái"
+                ]
             )
-            # đổi None -> ""
-            df = df.fillna("")
 
-            df.insert(0, "STT", range(1, len(df)+1))
+            # Ẩn None/NaN -> chuỗi rỗng
+            df = df.astype(object).where(pd.notnull(df), "")
+            # Nếu trạng thái trống thì hiển thị 'PENDING'
+            df["Trạng thái"] = df["Trạng thái"].replace({"": "PENDING"})
+
+            # Thêm STT
+            df.insert(0, "STT", range(1, len(df) + 1))
+
             history_box.dataframe(df, use_container_width=True, height=420)
-        except Exception:
-            pass
+        except Exception as e:
+            st.warning(f"Lỗi tải lịch sử: {e}")
+
 
 refresh_history()
 

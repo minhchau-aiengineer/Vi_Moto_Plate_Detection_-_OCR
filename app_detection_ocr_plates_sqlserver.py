@@ -31,11 +31,12 @@ st.markdown(
 #---------- Kết nối SQL Server ----------
 conn_str = (
     "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=localhost\\SQLEXPRESS;"
+    "SERVER=localhost;"
     "DATABASE=plates_db;"
     "UID=sa;"
-    "PWD=123456"  
-)
+    "PWD=123456" 
+)   
+
 conn = None
 cur = None
 db_available = False
@@ -51,19 +52,24 @@ except Exception as e:
     st.error(f"Chi tiết: {e}")
 
 
-
 #---------- Tạo bảng Plates nếu chưa có ----------
 if db_available:
     try:
         cur.execute("""
-        IF OBJECT_ID('Plates', 'U') IS NULL
-        CREATE TABLE Plates (
-            id INT IDENTITY(1,1) PRIMARY KEY,
-            plate_idx NVARCHAR(10),
-            image_path NVARCHAR(255),
-            ocr_text NVARCHAR(64),
-            timestamp DATETIME
-        )
+        IF OBJECT_ID('dbo.ParkingSessions','U') IS NULL
+            CREATE TABLE dbo.ParkingSessions(
+                id INT IDENTITY(1,1) PRIMARY KEY,
+                plate_in NVARCHAR(64)  NULL,
+                date_in  NVARCHAR(16)  NULL,
+                time_in  NVARCHAR(16)  NULL,
+                image_in NVARCHAR(255) NULL,
+                plate_out NVARCHAR(64)  NULL,
+                date_out  NVARCHAR(16)  NULL,
+                time_out  NVARCHAR(16)  NULL,
+                image_out NVARCHAR(255) NULL,
+                match_status NVARCHAR(16) NULL,  -- 'KHOP-BIEN-SO' | 'KHONG-KHOP-BIEN-SO' | 'PENDING'
+                created_at DATETIME DEFAULT GETDATE()
+            );
         """)
         conn.commit()
     except Exception as e:

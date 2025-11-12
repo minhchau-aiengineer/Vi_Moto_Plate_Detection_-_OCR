@@ -1,0 +1,144 @@
+# =================================
+# 🔒 SECURITY & SENSITIVE DATA
+# =================================
+.env
+.env.local
+.env.production
+config/secrets.py
+*.key
+*.pem
+credentials.json
+
+# =================================
+# 🐍 PYTHON
+# =================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# =================================
+# 📊 DATA & DATABASES
+# =================================
+*.db
+*.sqlite
+*.sqlite3
+data/
+logs/
+*.log
+
+# =================================
+# 🖼️ GENERATED FILES
+# =================================
+GIU_XE/images/*.jpg
+GIU_XE/images/*.png
+GIU_XE/images/*.jpeg
+GIU_XE/file_out/*.xlsx
+GIU_XE/file_out/*.csv
+captured_images/
+output_images/
+
+# =================================
+# 🤖 AI MODELS (Large files)
+# =================================
+*.pt
+*.onnx
+*.pb
+*.h5
+*.weights
+model/detection_plates/*.pt
+model/ocr_plates/*.pt
+# Keep model directory structure
+!model/detection_plates/.gitkeep
+!model/ocr_plates/.gitkeep
+
+# =================================
+# 💻 IDE & EDITORS
+# =================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# =================================
+# 🐳 CONTAINERS & DEPLOYMENT
+# =================================
+.docker/
+docker-compose.override.yml
+.containerignore
+
+# =================================
+# 📦 DEPENDENCIES
+# =================================
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+
+# =================================
+# 🔧 SYSTEM & TEMP FILES
+# =================================
+*.tmp
+*.temp
+.env.backup
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.nyc_output/
+coverage.xml
+*.cover
+.hypothesis/
+
+# =================================
+# 📱 PLATFORM SPECIFIC
+# =================================
+# Windows
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Linux
+.directory
+.Trash-*
+
+# =================================
+# 🚀 BUILD & DIST
+# =================================
+*.spec
+dist/
+build/
+*.exe
+*.msi
+*.dmg
+*.pkg

@@ -3,6 +3,7 @@ from ultralytics import YOLO
 from ..utils.utils import has_boxes, norm_char, preprocess_for_ocr
 from ..config.config import DETECT_MODEL_PATH, OCR_MODEL_PATH
 from dotenv import load_dotenv
+from phanmemgiuxe.utils.log_helper import log_info
 
 
 
@@ -18,6 +19,7 @@ try:
         GEMINI_READY = True
 except Exception as _e:
     print("Gemini init failed:", _e)
+    log_info("Gemini init failed: {_e}")
     GEMINI_READY = False
 
 
@@ -33,8 +35,7 @@ class Models:
             self.ocr = YOLO(ocr_path)
         except Exception as e:
             self.ok = False; self.err = str(e)
-
-
+            log_info(f"[Models] Lỗi khởi tạo model: {e}")
 
 
 
@@ -65,6 +66,7 @@ class Models:
                     cv2.putText(boxed,"License Plate",(x1,max(0,y1-6)),cv2.FONT_HERSHEY_SIMPLEX,0.6,(0,255,0),2)
         except Exception as e:
             print(f"Lỗi detect_plates: {e}")
+            log_info(f"Lỗi detect_plates: {e}")
             return [], frame
 
         return plates, boxed if boxed is not None else frame
@@ -112,6 +114,7 @@ class Models:
             return self._format_text(text_raw)
         except Exception as e:
             print(f"Lỗi ocr_plate_yolo: {e}")
+            log_info(f"Lỗi ocr_plate_yolo: {e}")
             return "", "" 
 
 
@@ -125,6 +128,7 @@ class Models:
             img = Image.open(image_path)
         except Exception as e:
             print("Gemini open image error:", e); 
+            log_info("Gemini open image error: {e}")
             return "", ""
         try:
             model = genai.GenerativeModel('gemini-2.5-flash')
@@ -136,9 +140,11 @@ class Models:
             return self._format_text(raw)
         except gexceptions.GoogleAPICallError as e:
             print("Gemini API error:", e); 
+            log_info("Gemini API error: {e}")
             return "", ""
         except Exception as e:
             print("Gemini unknown error:", e); 
+            log_info("Gemini unknown error: {e}")
             return "", ""
 
 

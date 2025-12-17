@@ -2,11 +2,13 @@ import os, cv2, numpy as np
 from datetime import datetime
 from PySide6.QtGui import QImage
 from ..config.config import SAVE_DIR, PANEL_W, PANEL_H, PANEL_BG, OCR_MAP
+from phanmemgiuxe.utils.log_helper import log_info
 
 
 
 
 
+# === Lưu ảnh với tiền tố và timestamp ===
 def save_image(img, prefix):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     relative_path = os.path.join(SAVE_DIR, f"{prefix}_{ts}.jpg")
@@ -17,12 +19,15 @@ def save_image(img, prefix):
         return absolute_path
     except Exception as e:
         print(f"Lỗi khi lưu ảnh {absolute_path}: {e}")
+        log_info(f"Lỗi khi lưu ảnh {absolute_path}: {e}")
         return None 
 
 
 
 
 
+
+# === Thêm viền đen để fit vào panel ===
 def letterbox(bgr, w=PANEL_W, h=PANEL_H, color=PANEL_BG):
     if bgr is None: 
         return np.full((h, w, 3), color, dtype=np.uint8)
@@ -44,6 +49,8 @@ def letterbox(bgr, w=PANEL_W, h=PANEL_H, color=PANEL_BG):
 
 
 
+
+# === Chuyển BGR (OpenCV) sang QImage (Qt) ===
 def bgr_to_qimage(bgr):
     if bgr is None: 
         bgr = np.full((PANEL_H, PANEL_W, 3), PANEL_BG, dtype=np.uint8)
@@ -57,16 +64,20 @@ def bgr_to_qimage(bgr):
 
 
 
+
+# === Chuẩn hóa ký tự OCR ===
 def norm_char(x): 
     return OCR_MAP.get(str(x), str(x))
 
 
 
+# === Chuẩn hóa biển số xe ===
 def plate_norm(s: str) -> str: 
     return (s or "").replace("-", "").replace(" ", "").upper()
 
 
 
+# === Kiểm tra kết quả nhận dạng có box hay không ===
 def has_boxes(r):
     try: 
         return hasattr(r, "boxes") and r.boxes is not None and len(r.boxes) > 0
@@ -77,6 +88,8 @@ def has_boxes(r):
 
 
 
+
+# === Tiền xử lý ảnh ROI cho OCR ===
 def preprocess_for_ocr(roi):
     if roi is None: 
         return None

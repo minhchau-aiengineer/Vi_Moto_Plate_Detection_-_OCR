@@ -11,13 +11,12 @@ File này chỉ chứa phần "look & feel", không chứa logic nghiệp vụ.
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QMainWindow, QPushButton
+from PySide6.QtWidgets import QMainWindow, QPushButton, QSizePolicy
 
-# ======================================================================
-#  STYLESHEET CHUNG
-# ======================================================================
 
-# Đây là stylesheet bạn dùng trong _init_theme cũ, mình gom lại thành hằng số.
+
+
+# === THEME CHUNG CHO TOÀN ỨNG DỤNG ===
 BASE_STYLESHEET = """
 * { 
     color: #000000; 
@@ -94,15 +93,15 @@ QTableWidget {
     gridline-color: #e6e6e6; 
 }
 """
-
-# Bạn có thể xài chuỗi này để tái sử dụng khi style nút:
 COMMON_BUTTON_STYLE = "height:34px; font-weight:600; border-radius:10px; padding:4px 10px;"
 
 
-# ======================================================================
-#  HÀM ÁP DỤNG THEME
-# ======================================================================
 
+
+
+
+
+# === APPLY THEME CHUNG CHO TOÀN ỨNG DỤNG ===
 def apply_global_theme(window: QMainWindow) -> None:
     """
     Áp dụng theme (stylesheet) chung cho toàn bộ ứng dụng.
@@ -110,18 +109,17 @@ def apply_global_theme(window: QMainWindow) -> None:
     Gọi trong MainWindow.__init__:
         apply_global_theme(self)
     """
-    # Font mặc định (tuỳ bạn, có thể bỏ nếu không cần)
+    
     default_font = QFont("Segoe UI", 9)
     window.setFont(default_font)
-
-    # Áp dụng stylesheet
     window.setStyleSheet(BASE_STYLESHEET)
 
 
-# ======================================================================
-#  HELPER STYLE NÚT
-# ======================================================================
 
+
+
+
+# === HÀM TIỆN ÍCH CHO BUTTON ===
 def normalize_button(*buttons: QPushButton) -> None:
     """
     Chuẩn hoá các QPushButton:
@@ -136,16 +134,18 @@ def normalize_button(*buttons: QPushButton) -> None:
         b.setAutoDefault(False)
         b.setDefault(False)
         b.setFlat(False)
-        b.setFocusPolicy(Qt.NoFocus)
+        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         b.setSizePolicy(
-            b.sizePolicy().horizontalPolicy(),
-            b.sizePolicy().verticalPolicy() if b.sizePolicy().verticalPolicy() != 0 else Qt.SizeHintRole,
+            QSizePolicy.Policy.Minimum,
+            QSizePolicy.Policy.Fixed
         )
-        # Thực tế chỉ cần:
-        # b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        # nhưng tránh import thêm QSizePolicy ở đây nếu không cần.
 
 
+
+
+
+
+# === ÁP DỤNG STYLESHEET CHO BUTTON ===
 def apply_button_style(button: QPushButton, css: str) -> None:
     """
     Gán stylesheet cho button.

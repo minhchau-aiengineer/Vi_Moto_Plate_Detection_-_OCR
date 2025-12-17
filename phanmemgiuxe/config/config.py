@@ -39,7 +39,8 @@ CONN_STR = (
     "SERVER=localhost;"
     "DATABASE=plates_db;"
     "UID=sa;"
-    "PWD=123456"
+    "PWD=123456;"
+    "MARS_Connection=Yes;"
 )
 
 

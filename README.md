@@ -1,43 +1,7 @@
 #                        🚗 HỆ THỐNG QUẢN LÝ BÃI ĐỖ XE THÔNG MINH
-
-**                  🎓 ĐỒ ÁN TỐT NGHIỆP - QUẢN LÝ BÃI ĐỖ XE THÔNG MINH**
-
-*                   Ứng dụng desktop sử dụng AI nhận dạng biển số xe tự động*
-
----
-
-## ----------👥 THÀNH VIÊN NHÓM----------
-**SINH VIÊN 1**
-Họ tên: Trần Minh Châu
-MSSV: 21070211
-Lớp: DHKHDL19A
-
-**SINH VIÊN 2**
-Họ tên: Phạm Thanh Thảo
-MSSV: 22695701
-Lớp: DHKHDL19A
+*                Ứng dụng desktop sử dụng AI nhận dạng biển số xe tự động*
 
 
-
-## ----------📋 MỤC LỤC----------
-
-|   Chương   |               Nội dung      |          Trang              |
-|:----------:|:-----=================------|:---------------------------:|
-|   **1**    | [👥 Thành viên nhóm]       | [↑](#-thành-viên-nhóm)       |
-|   **2**    | [📖 Giới thiệu dự án]      | [↓](#-giới-thiệu-dự-án)      |
-|   **3**    | [🎯 Tính năng chính]       | [↓](#-tính-năng-chính)       |
-|   **4**    | [🏗️ Kiến trúc dự án]       | [↓](#️-kiến-trúc-dự-án)       |
-|   **5**    | [⚙️ Yêu cầu hệ thống]      | [↓](#️-yêu-cầu-hệ-thống)      |
-|   **6**    | [🔧 Cài đặt và triển khai] | [↓](#-cài-đặt-và-triển-khai) |
-|   **7**    | [� Giao diện]              | [↓](#-giao-diện)             |
-|   **8**    | [📁 Cấu trúc dự án]        | [↓](#-cấu-trúc-dự-án)        |
-|   **9**    | [🤖 AI Models]             | [↓](#-ai-models)             |
-|   **10**   | [🗄️ Database]              | [↓](#️-database)              |
-|   **11**   | [� Xử lý sự cố]            | [↓](#-xử-lý-sự-cố)           |
-|   **12**   | [� Cấu hình bảo mật]       | [↓](#-cấu-hình-bảo-mật)      |
-|   **13**   | [� Hướng dẫn sử dụng]      | [↓](#-hướng-dẫn-sử-dụng)     |
-
----
 
 ## ----------📖 GIỚI THIỆU DỰ ÁN----------
 
@@ -58,32 +22,18 @@ Hệ thống Quản lý Bãi Đỗ Xe Thông minh là một ứng dụng desktop
 
 
 ### 🔄 **LUỒNG XỬ LÝ CHÍNH**
-
-
 *            🎥 [Camera Input] 
-
 *                    ↓
-
 🎯 [YOLOv8 Detection] → 📦 [Bounding Box + Confidence]
-
 *                    ↓
-
 *    📝 [OCR Processing] → 🔤 [Text Recognition]
-
 *                    ↓
-
 *   ❓ [Quality Check] → 🤖 [Gemini AI Fallback]
-
 *                    ↓
-
 * 🔄 [Auto-matching Algorithm] → 🚗 [Vehicle Pairing]
-
 *                    ↓
-
 *   💾 [Database Storage] → 📊 [Statistics Update]
-
 *                    ↓
-
 *     🎵 [Audio Notification] + 🖥️ [UI Update]
 
 
@@ -115,8 +65,8 @@ cd PHAN-MEM-GIU-XE
 ### **Bước 2:  Tạo môi trường Python**
 ```bash
 # Tạo môi trường Conda (KHUYẾN NGHỊ)
-conda create -n giuxe_new python=3.11 -y
-conda activate giuxe_new
+conda create -n phanmemgiuxe python=3.11 -y
+conda activate phanmemgiuxe
 
 # HOẶC tạo môi trường Virtual Environment
 python -m venv venv
@@ -156,13 +106,17 @@ notepad .env    # Windows
 ```
 
 #### **Bước 6: Chạy ứng dụng**
-```bash
-# Di chuyển vào thư mục app
-cd GIU_XE/app
-
-# Chạy ứng dụng
+```bash 
+# CÁCH 1
+cd phanmemgiuxe/app
 python main.py
 ```
+
+```bash 
+#  CÁCH 2
+python -m phanmemgiuxe.app.main
+```
+
 
 
 ### 🛠️ **CẤU HÌNH CHI TIẾT**
@@ -235,3 +189,174 @@ SOUND_OUT_PATH = "audio/exit_sound.wav"
 ├── 📄 .env.example                     # 🔐 Environment Template
 └── 📄 README.md                        # 📖 Documentation
 ```
+
+
+
+
+# ------- Database ----------
+
+* Bảng BarrierConfigs:
+SELECT TOP (1000) [barrier_id]
+      ,[name]
+      ,[lane]
+      ,[ip_address]
+      ,[port_number]
+      ,[serial_number]
+      ,[account]
+      ,[password]
+      ,[port_name]
+      ,[relay]
+      ,[open_delay_ms]
+      ,[close_delay_ms]
+      ,[auto_open_on_match]
+      ,[is_active]
+      ,[note]
+      ,[created_at]
+  FROM [plates_db].[dbo].[BarrierConfigs]
+
+
+
+* Bảng BarrierEvents:
+SELECT TOP (1000) [event_id]
+      ,[barrier_id]
+      ,[barrier_name]
+      ,[direction]
+      ,[action]
+      ,[session_id]
+      ,[triggered_by]
+      ,[created_at]
+      ,[note]
+  FROM [plates_db].[dbo].[BarrierEvents]
+
+
+
+* Bảng CameraMapping:
+SELECT TOP (1000) [id]
+      ,[function_type]
+      ,[camera_id]
+      ,[note]
+  FROM [plates_db].[dbo].[CameraMapping]
+
+
+
+* Bảng Cameras:
+SELECT TOP (1000) [camera_id]
+      ,[camera_name]
+      ,[camera_type]
+      ,[source_index]
+      ,[ip_address]
+      ,[port]
+      ,[url_path]
+      ,[full_url]
+      ,[username]
+      ,[password]
+      ,[direction]
+      ,[is_active]
+      ,[note]
+      ,[view_role]
+  FROM [plates_db].[dbo].[Cameras]
+
+
+
+* Bảng CardReaders:
+SELECT TOP (1000) [id]
+      ,[device_name]
+      ,[port_name]
+      ,[ip_address]
+      ,[port_number]
+      ,[serial_number]
+      ,[reader_id]
+      ,[status]
+      ,[device_type]
+      ,[created_at]
+      ,[updated_at]
+  FROM [plates_db].[dbo].[CardReaders]
+
+
+
+* Bảng FeeRules:
+SELECT TOP (1000) [fee_rule_id]
+      ,[vehicle_type_id]
+      ,[category]
+      ,[rule_type]
+      ,[price]
+      ,[effective_from]
+      ,[effective_to]
+      ,[is_active]
+      ,[description]
+      ,[created_at]
+      ,[unit]
+  FROM [plates_db].[dbo].[FeeRules]
+
+
+
+* Bảng ParkingSessions:
+SELECT TOP (1000) [id]
+      ,[plate_in]
+      ,[date_in]
+      ,[time_in]
+      ,[image_in]
+      ,[plate_out]
+      ,[date_out]
+      ,[time_out]
+      ,[image_out]
+      ,[match_status]
+      ,[created_at]
+      ,[vehicle_id]
+      ,[vehicle_type_id]
+      ,[session_category]
+      ,[fee_rule_id]
+      ,[fee_amount]
+      ,[is_paid]
+      ,[paid_at]
+      ,[created_by]
+      ,[closed_by]
+      ,[note]
+      ,[card_id]
+      ,[image_in_face]
+      ,[image_in_plate]
+      ,[image_out_face]
+      ,[image_out_plate]
+  FROM [plates_db].[dbo].[ParkingSessions]
+
+
+
+
+* Bảng Users: 
+SELECT TOP (1000) [user_id]
+      ,[username]
+      ,[password_hash]
+      ,[full_name]
+      ,[role]
+      ,[is_active]
+      ,[last_login_at]
+      ,[created_at]
+  FROM [plates_db].[dbo].[Users]
+
+
+
+
+* Bảng Vehicles:
+SELECT TOP (1000) [vehicle_id]
+      ,[plate_number]
+      ,[vehicle_type_id]
+      ,[category]
+      ,[owner_name]
+      ,[owner_phone]
+      ,[department]
+      ,[note]
+      ,[is_active]
+      ,[created_at]
+  FROM [plates_db].[dbo].[Vehicles]
+
+
+
+
+* Bảng VehicleTypes:
+SELECT TOP (1000) [vehicle_type_id]
+      ,[code]
+      ,[name]
+      ,[description]
+      ,[is_active]
+      ,[created_at]
+  FROM [plates_db].[dbo].[VehicleTypes]

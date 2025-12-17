@@ -1,385 +1,387 @@
-# ui/main_window.py
+from __future__ import annotations
 
-import os
-import time
-import traceback
+from typing import Optional, Dict
 
-import numpy as np
-import cv2
-import pandas as pd
-
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
-    QHBoxLayout,
     QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
     QStackedWidget,
     QSizePolicy,
-    QMessageBox,
+    QFrame,
 )
 
-from ..config.config import (
-    API_MAP,
-    LOGO_PATH,
-    DETECT_MODEL_PATH,
-    OCR_MODEL_PATH,
-    SOUND_IN_PATH,
-    SOUND_OUT_PATH,
-    CONN_STR,
-    USE_SQL,
-)
-from ..database.database import DB
-from ..models.models import Models, GEMINI_READY
-from ..workers.workers import VideoWorker, HistoryLoaderWorker
-from ..dialogs.dialogs import DeleteDialog
-from ..utils.utils import bgr_to_qimage, letterbox
+from .pages import CameraPage, HistoryPage, ConfigPage
+from .pages.statistics import StatisticsPages
 from ..statistics.statistics import ParkingStatistics
+from .pages.cameras.camera_4view import Camera4ViewPage
 
-# Theme & widgets
-from .theme import apply_global_theme
+try:
+    from .theme import APP_STYLESHEET  # type: ignore
+except (ImportError, AttributeError):
+    APP_STYLESHEET = ""
 
-# Các "page" / mixin cho từng phần UI
-from .pages.camera import CameraPageMixin
-from .pages.history import HistoryPageMixin
-from .pages.search import SearchPageMixin
-from .pages.statistics import StatisticsPageMixin
+try:
+    from ..auth import User  # type: ignore
+except Exception:
+    class User:  # type: ignore
+        def __init__(self) -> None:
+            self.username = "unknown"
+            self.full_name = "Unknown"
+            self.role = "GUARD"
 
 
-class MainWindow(
-    QMainWindow,
-    CameraPageMixin,
-    HistoryPageMixin,
-    SearchPageMixin,
-    StatisticsPageMixin,
-):
+
+
+# ===== PHÂN QUYỀN THEO ROLE =====
+ROLE_PERMISSIONS = {
+    "ADMIN": {"camera","camera2", "history", "statistics", "config"},
+    "MANAGER": {"camera", "camera2", "history", "statistics", "config"},
+    "GUARD": {"camera", "camera2", "history"},  
+}
+
+
+
+# ===== NHÃN ROLE BẰNG TIẾNG VIỆT =====
+
+ROLE_LABELS_VN = {
+    "ADMIN": "Admin",
+    "MANAGER": "Quản lý",
+    "GUARD": "Bảo vệ",
+}
+
+
+
+
+
+
+# ===== Main Window =====
+class MainWindow(QMainWindow, StatisticsPages):
     """
-    Cửa sổ chính của ứng dụng.
+    Cửa sổ chính của ứng dụng:
 
-    Vai trò của MainWindow:
-    - Khởi tạo core (models, DB, statistics service).
-    - Khởi tạo và ghép các "page" (camera, history, search, statistics) vào QStackedWidget.
-    - Gắn các signal giữa sidebar, các page, timer.
-    - Xử lý vòng đời ứng dụng (closeEvent).
-
-    Toàn bộ code UI chi tiết được chia sang:
-    - ui/theme.py                    : global stylesheet
-    - ui/widgets.py                  : component UI nhỏ
-    - ui/pages/camera.py             : camera + sidebar
-    - ui/pages/history.py            : bảng lịch sử + detail view
-    - ui/pages/search.py             : trang bộ lọc tìm kiếm
-    - ui/pages/statistics.py         : trang thống kê
+    - Thanh tab trên cùng: Camera / Lịch sử / Tìm kiếm / Thống kê / Cấu hình
+    - Khu vực thân: QStackedWidget chứa các page:
+        + CameraPage
+        + HistoryPage
+        + StatisticsPage
+        + ConfigPage
+    - Phân quyền theo current_user.role:
+        + GUARD : chỉ Camera + Lịch sử
+        + MANAGER/ADMIN: full
     """
 
-    def __init__(self, parent=None):
+
+
+
+
+    # === Khởi tạo cửa sổ chính ===
+    def __init__(self, current_user=None, parent=None) -> None:
         super().__init__(parent)
 
-        # ---------- Cấu hình cửa sổ ----------
-        self.setWindowTitle("Desktop App (Giữ xe)")
-        self.setMinimumSize(1400, 900)
-        self.resize(1600, 1000)
-
-        # ---------- Áp dụng theme chung ----------
-        apply_global_theme(self)
-
-        # ---------- Khởi tạo core: model, DB, statistics ----------
-        self.models = Models(DETECT_MODEL_PATH, OCR_MODEL_PATH)
-        if not self.models.ok:
-            QMessageBox.warning(
-                self,
-                "Model error",
-                f"Không load được model:\n{self.models.err}",
-            )
-
-        # DB & Statistics service
-        self.db = DB(CONN_STR) if USE_SQL else DB("")
-        self.stats_service = ParkingStatistics() if USE_SQL else None
-        if self.stats_service:
-            self.stats_service.db = self.db
-
-        # ---------- Trạng thái chung cho Statistics ----------
-        self._stats_last_reload = 0.0
-        self.statistics_view = None  # sẽ được build trong build_statistics_page
-
-        # ---------- Trạng thái camera ----------
-        self.cam1_worker: VideoWorker | None = None
-        self.cam2_worker: VideoWorker | None = None
-
-        # Hướng làn xe
-        self.lane1_dir = "VÀO"
-        self.lane2_dir = "VÀO"
-        self.one_way_toggle_vao = True
-        self.two_way_toggle = True
-
-        # OCR mode
-        self.current_ocr_mode = "yolo"
-
-        # ---------- Lịch sử / History ----------
-        self.history_df = pd.DataFrame()
-        self.current_filter_start = None
-        self.current_filter_end = None
-        self.current_filter_status = None
-        self.current_filter_plate = None
-        self.history_worker: HistoryLoaderWorker | None = None
-        self._hist_last_reload = 0.0
-
-        # ---------- Logo mặc định ----------
-        # (qpix_logo được định nghĩa trong CameraPageMixin)
-        self._logo_pm: QPixmap | None = None
-
-        # ---------- Âm thanh ----------
-        # (được sử dụng trong CameraPageMixin)
-        self.sound_in = None
-        self.sound_out = None
-        self._init_sounds()
-
-        # ---------- Xây UI ----------
-        self._build_ui()
-
-        # Sau khi UI camera đã build xong, khởi tạo logo
-        self._logo_pm = self.qpix_logo()
-        self.show_logo(1)
-        self.show_logo(2)
-
-        # ---------- Timer tự động refresh history & statistics ----------
-        self.hist_timer = QTimer(self)
-        self.hist_timer.timeout.connect(self.on_history_signal_refresh)
-        self.hist_timer.start(5000)
-
-    # ======================================================================
-    #  AUDIO INIT
-    # ======================================================================
-
-    def _init_sounds(self) -> None:
-        """
-        Khởi tạo QSoundEffect cho xe vào / xe ra.
-
-        Được gọi trong __init__, trước khi các page dùng.
-        Thực tế xử lý play sound nằm trong CameraPageMixin (on_play_sound).
-        """
-        from PySide6.QtMultimedia import QSoundEffect
-        from PySide6.QtCore import QUrl
-
-        self.sound_in = QSoundEffect(self)
-        sound_in_abs = os.path.abspath(SOUND_IN_PATH)
-        if os.path.exists(sound_in_abs):
-            self.sound_in.setSource(QUrl.fromLocalFile(sound_in_abs))
+        # Cho phép truyền vào dict hoặc object User
+        if isinstance(current_user, dict):
+            class UserObj:
+                def __init__(self, d):
+                    self.username = d.get('username', '')
+                    self.full_name = d.get('full_name', '')
+                    self.role = d.get('role', 'GUARD')
+            self.current_user = UserObj(current_user)
         else:
-            print(f"Lỗi: Không tìm thấy file âm thanh: {sound_in_abs}")
+            self.current_user = current_user
 
-        self.sound_out = QSoundEffect(self)
-        sound_out_abs = os.path.abspath(SOUND_OUT_PATH)
-        if os.path.exists(sound_out_abs):
-            self.sound_out.setSource(QUrl.fromLocalFile(sound_out_abs))
-        else:
-            print(f"Lỗi: Không tìm thấy file âm thanh: {sound_out_abs}")
+        # Service thống kê đọc dữ liệu từ DB
+        self.stats_service = ParkingStatistics()
 
-    # ======================================================================
-    #  BUILD UI
-    # ======================================================================
+        # Dict lưu button và index page trong QStackedWidget
+        self._nav_buttons: Dict[str, QPushButton] = {}
+        self._page_indexes: Dict[str, int] = {}
 
-    def _build_ui(self) -> None:
+        self.setWindowTitle("HỆ THỐNG GIỮ XE")
+        self.resize(1200, 720)
+
+        self._init_theme()
+        self._init_ui()
+        self._apply_role_permissions()
+
+
+
+
+
+
+    # === Áp dụng theme / stylesheet chung cho toàn app ===
+    def _init_theme(self) -> None:
+        base = APP_STYLESHEET or ""
+
+        extra = """
+        /* NỀN CHUNG CẢ APP */
+        QMainWindow {
+            background-color: #f5f5f7;
+        }
+        QWidget#CentralRoot {
+            background-color: #f5f5f7;
+        }
+        QFrame#MainBody {
+            background-color: #f5f5f7;
+        }
+        QFrame#NavBar {
+            background-color: #f5f5f7;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        /* Sidebar trong các page (nếu có đặt objectName) */
+        QFrame#SideBarFrame, QWidget#SideBarFrame {
+            background-color: #ffffff;
+            border-right: 1px solid #e5e7eb;
+        }
+
+        /* Các page chính dùng nền xám rất nhạt */
+        QWidget#HistoryPageRoot,
+        QWidget#SearchPageRoot,
+        QWidget#CameraPageRoot {
+            background-color: #f5f5f7;
+        }
+
+        /* ===== BẢNG LỊCH SỬ: nền trắng, CHỮ MÀU ĐEN ===== */
+        QTableView, QTableWidget {
+            background-color: #ffffff;
+            color: #111827;                 /* chữ đen */
+            gridline-color: #9ca3af;
+        }
+        QHeaderView::section {
+            background-color: #e5e7eb;
+            color: #111827;
+            padding: 4px;
+            border: 1px solid #9ca3af;
+        }
+
+        /* ===== KHUNG (GROUPBOX) VIỀN ĐEN ĐẬM ===== */
+        QGroupBox {
+            border: 1px solid #111827;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 4px;
+            color: #111827;
+            background-color: transparent;
+        }
+
+        /* ===== NÚT TAB TRÊN CÙNG: CAMERA / LỊCH SỬ... ===== */
+        QPushButton#TopNavButton {
+            background-color: #d1d5db;          /* nền xám rõ hơn */
+            border: 1px solid #9ca3af;
+            border-radius: 4px;
+            padding: 6px 18px;
+            font-weight: 600;
+            color: #111827;
+        }
+        QPushButton#TopNavButton:hover {
+            background-color: #9ca3af;          /* hover xám đậm hơn */
+        }
+        QPushButton#TopNavButton:checked {
+            background-color: #6b7280;          /* khi đang được chọn: xám đậm */
+            border: 1px solid #374151;
+            color: #ffffff;                     /* chữ trắng cho dễ nhìn */
+        }
         """
-        Ghép tất cả phần UI lại:
 
-        - Tạo central widget + layout root.
-        - Nhờ CameraPageMixin build sidebar + main_view (camera).
-        - Tạo QStackedWidget chứa:
-            index 0: main_view (camera)
-            index 1: history_view
-            index 2: detail_view
-            index 3: search_filter_view
-            index 4: statistics_view (nếu có)
-        - Gắn cross-page signals (history, search, statistics).
-        """
-        central = QWidget()
+        self.setStyleSheet(base + extra)
+
+    
+    
+    
+    
+    
+    # === Khởi tạo UI chính: thanh tab + stacked pages + status bar ===
+    def _init_ui(self) -> None:
+        import time
+        # -------- Central widget + layout root --------
+        central = QWidget(self)
+        central.setObjectName("CentralRoot")
         self.setCentralWidget(central)
 
-        root = QHBoxLayout(central)
+        root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Style chung cho các nút (button) – truyền cho các page nếu cần
-        common_btn_style = (
-            "height:34px; font-weight:600; border-radius:10px; padding:4px 10px;"
-        )
+        # ===== Thanh TAB TRÊN CÙNG =====
+        nav_bar = QFrame()
+        nav_bar.setObjectName("NavBar")
+        nav_layout = QHBoxLayout(nav_bar)
+        nav_layout.setContentsMargins(8, 8, 8, 8)
+        nav_layout.setSpacing(4)
 
-        # ---------------------------------------------------------
-        # 1) Sidebar + Main Camera View (camera page)
-        # ---------------------------------------------------------
-        # CameraPageMixin phải cung cấp:
-        #   build_camera_page(common_btn_style) -> (sidebar_scroll, main_view)
-        sidebar_scroll, self.main_view = self.build_camera_page(common_btn_style)
+        self.btn_tab_camera = self._create_nav_button("Camera", key="camera")
+        self.btn_tab_history = self._create_nav_button("Lịch sử", key="history")
+        self.btn_tab_stats = self._create_nav_button("Thống kê", key="statistics")
+        self.btn_tab_config = self._create_nav_button("Cấu hình", key="config")
+        self.btn_tab_camera2 = self._create_nav_button("Camera 2", key="camera2")
 
-        # Sidebar nằm bên trái, không giãn (stretch 0)
-        root.addWidget(sidebar_scroll, 0)
+        nav_layout.addWidget(self.btn_tab_camera)
+        nav_layout.addWidget(self.btn_tab_history)
+        nav_layout.addWidget(self.btn_tab_stats)
+        nav_layout.addWidget(self.btn_tab_config)
+        nav_layout.addWidget(self.btn_tab_camera2)
+        nav_layout.addStretch(1)
 
-        # ---------------------------------------------------------
-        # 2) Stacked Widget cho phần bên phải
-        # ---------------------------------------------------------
-        self.stacked = QStackedWidget()
-        self.stacked.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
-        )
+        root.addWidget(nav_bar, 0)
 
-        # index 0: Main camera view
-        self.stacked.addWidget(self.main_view)  # index 0
+        # ===== Khu vực thân chính (Stacked pages) =====
+        body = QFrame()
+        body.setObjectName("MainBody")
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
 
-        # ---------------------------------------------------------
-        # 3) History + Detail pages
-        # ---------------------------------------------------------
-        # HistoryPageMixin phải cung cấp:
-        #   build_history_pages(common_btn_style) -> (history_view, detail_view)
-        self.history_view, self.detail_view = self.build_history_pages(common_btn_style)
-        self.stacked.addWidget(self.history_view)  # index 1
-        self.stacked.addWidget(self.detail_view)   # index 2
+        self.stack = QStackedWidget()
+        self.stack.setObjectName("MainStack")
 
-        # ---------------------------------------------------------
-        # 4) Search filter page
-        # ---------------------------------------------------------
-        # SearchPageMixin phải cung cấp:
-        #   build_search_page(common_btn_style) -> search_filter_view
-        self.search_filter_view = self.build_search_page(common_btn_style)
-        self.stacked.addWidget(self.search_filter_view)  # index 3
+        # --- Page Camera ---
+        t_cam = time.time()
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Bắt đầu khởi tạo CameraPage...")
+        self.page_camera = CameraPage(parent=self)
+        self.page_camera.setObjectName("CameraPageRoot")
+        self._page_indexes["camera"] = self.stack.addWidget(self.page_camera)
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Khởi tạo CameraPage mất {time.time()-t_cam:.2f}s")
 
-        # ---------------------------------------------------------
-        # 5) Statistics page
-        # ---------------------------------------------------------
-        # StatisticsPageMixin phải cung cấp:
-        #   build_statistics_page(common_btn_style) -> statistics_view | None
-        self.statistics_view = self.build_statistics_page(common_btn_style)
-        if self.statistics_view is not None:
-            self.stacked.addWidget(self.statistics_view)  # index 4
+        # --- Page History ---
+        t_hist = time.time()
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Bắt đầu khởi tạo HistoryPage...")
+        self.page_history = HistoryPage(parent=self)
+        self.page_history.setObjectName("HistoryPageRoot")
+        self._page_indexes["history"] = self.stack.addWidget(self.page_history)
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Khởi tạo HistoryPage mất {time.time()-t_hist:.2f}s")
 
-        self.stacked.setCurrentIndex(0)
+        # --- Page Statistics ---
+        t_stats = time.time()
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Bắt đầu khởi tạo StatisticsPage...")
+        self.page_statistics = self.build_statistics_page("")
+        self._page_indexes["statistics"] = self.stack.addWidget(self.page_statistics)
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Khởi tạo StatisticsPage mất {time.time()-t_stats:.2f}s")
 
-        # ---------------------------------------------------------
-        # 6) Đặt stacked vào right_container
-        # ---------------------------------------------------------
-        right_container = QVBoxLayout()
-        right_container.setContentsMargins(0, 0, 0, 0)
-        right_container.setSpacing(0)
-        right_container.addWidget(self.stacked, 1)
+        # --- Page Config (Cấu hình) ---
+        t_cfg = time.time()
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Bắt đầu khởi tạo ConfigPage...")
+        self.page_config = ConfigPage(parent=self)
+        self.page_config.setObjectName("ConfigPageRoot")
+        self._page_indexes["config"] = self.stack.addWidget(self.page_config)
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Khởi tạo ConfigPage mất {time.time()-t_cfg:.2f}s")
 
-        right_widget = QWidget()
-        right_widget.setLayout(right_container)
-        right_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
-        )
+        # --- Page Camera 2 ---
+        t_cam2 = time.time()
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Bắt đầu khởi tạo Camera4ViewPage...")
+        self.page_camera2 = Camera4ViewPage(parent=self)
+        self._page_indexes["camera2"] = self.stack.addWidget(self.page_camera2)
+        print(f"[Startup] [{time.strftime('%H:%M:%S')}] Khởi tạo Camera4ViewPage mất {time.time()-t_cam2:.2f}s")
 
-        # Right widget chiếm toàn bộ phần còn lại (stretch 1)
-        root.addWidget(right_widget, 1)
+        body_layout.addWidget(self.stack)
+        root.addWidget(body, 1)
 
-        # ---------------------------------------------------------
-        # 7) Cập nhật title camera (theo làn) sau khi UI xong
-        # ---------------------------------------------------------
-        # Hàm này được định nghĩa trong CameraPageMixin
-        self.update_titles_and_modes()
-
-        # ---------------------------------------------------------
-        # 8) Gắn các signal liên quan tới nhiều page
-        # ---------------------------------------------------------
-        self._connect_cross_page_signals()
-
-    # ======================================================================
-    #  CROSS PAGE SIGNALS
-    # ======================================================================
-
-    def _connect_cross_page_signals(self) -> None:
-        """
-        Gắn các signal giữa sidebar và các trang:
-
-        - Các nút lịch sử (show/hide, export, delete, search).
-        - Nút quay lại từ trang detail và trang search filter.
-        - Nút thống kê và các nút trong trang thống kê.
-        """
-
-        # ---------------- BẢNG LỊCH SỬ ----------------
-        # Các thuộc tính này được tạo trong build_camera_page / build_history_pages / build_search_page
-        if hasattr(self, "btn_show_history"):
-            self.btn_show_history.clicked.connect(self.on_show_all_history_clicked)
-
-        if hasattr(self, "btn_hide_history"):
-            self.btn_hide_history.clicked.connect(self.show_main_view)
-
-        if hasattr(self, "btn_export_hist"):
-            self.btn_export_hist.clicked.connect(self.on_export_excel)
-
-        if hasattr(self, "btn_delete_hist"):
-            self.btn_delete_hist.clicked.connect(self.on_delete_history)
-
-        if hasattr(self, "btn_search_hist"):
-            self.btn_search_hist.clicked.connect(self.on_search_history_clicked)
-
-        if hasattr(self, "btn_back_to_history"):
-            self.btn_back_to_history.clicked.connect(self.show_history_view_only)
-
-        # ---------------- TRANG TÌM KIẾM ----------------
-        if hasattr(self, "sfv_btn_back"):
-            self.sfv_btn_back.clicked.connect(self.show_history_view_only)
-
-        if hasattr(self, "sfv_btn_search"):
-            self.sfv_btn_search.clicked.connect(self.on_run_search_from_page)
-
-        # ---------------- TRANG THỐNG KÊ ----------------
-        if hasattr(self, "btn_show_statistics"):
-            self.btn_show_statistics.clicked.connect(self.on_show_statistics_clicked)
-
-        if getattr(self, "btn_stats_back", None):
-            self.btn_stats_back.clicked.connect(self.show_main_view)
-
-        if getattr(self, "btn_stats_refresh", None):
-            self.btn_stats_refresh.clicked.connect(self.on_refresh_statistics_clicked)
-
-        if getattr(self, "btn_stats_export", None):
-            self.btn_stats_export.clicked.connect(self.on_export_statistics_report)
-
-        if getattr(self, "stats_range_combo", None):
-            self.stats_range_combo.currentIndexChanged.connect(
-                self.on_stats_range_changed
+        # ===== Status bar: thông tin user đăng nhập =====
+        if self.current_user:
+            role = (self.current_user.role or "").upper()
+            role_label = ROLE_LABELS_VN.get(role, role)
+            self.statusBar().showMessage(
+                f"Đăng nhập: {self.current_user.username} ({role_label})"
             )
 
-    # ======================================================================
-    #  VIEW SWITCH HELPERS
-    #  (có thể cũng được override / dùng lại trong HistoryPageMixin)
-    # ======================================================================
+        # Chọn page mặc định (sau đó _apply_role_permissions có thể đổi lại)
+        self._switch_page("camera")
 
-    def show_main_view(self) -> None:
+    
+    
+    
+    
+    
+    # === Tạo nút tab trên cùng ===
+    def _create_nav_button(self, text: str, key: str) -> QPushButton:
+        btn = QPushButton(text)
+        btn.setCheckable(True)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        btn.setMinimumHeight(36)
+        btn.setObjectName("TopNavButton")
+
+        self._nav_buttons[key] = btn
+        btn.clicked.connect(self._on_nav_button_clicked)
+
+        return btn
+
+    
+    
+    
+    
+    
+    # === Handler chung cho nút tab trên cùng ===
+    def _on_nav_button_clicked(self) -> None:
         """
-        Chuyển về trang chính (camera).
-
-        Hàm này được gọi từ:
-        - Nút "Tắt bảng lịch sử"
-        - Nút "Quay lại" trong trang thống kê
+        Handler chung cho tất cả nút tab.
+        Tự tìm xem nút nào phát tín hiệu rồi gọi _switch_page(key).
         """
-        if hasattr(self, "stacked"):
-            self.stacked.setCurrentIndex(0)
+        sender = self.sender()
+        if not isinstance(sender, QPushButton):
+            return
 
-        # Cập nhật nút history nếu tồn tại
-        if hasattr(self, "btn_hide_history"):
-            self.btn_hide_history.hide()
-        if hasattr(self, "btn_show_history"):
-            self.btn_show_history.show()
+        for key, btn in self._nav_buttons.items():
+            if btn is sender:
+                self._switch_page(key)
+                break
 
-    # ======================================================================
-    #  CLOSE EVENT
-    # ======================================================================
+    
+    
+    
+    
+    
+    # === Chuyển page trong QStackedWidget ===
+    def _switch_page(self, key: str) -> None:
+        """Chuyển sang page theo key ('camera', 'history', 'statistics', 'config')."""
+        if key not in self._page_indexes:
+            return
 
-    def closeEvent(self, event) -> None:
+        index = self._page_indexes[key]
+        self.stack.setCurrentIndex(index)
+
+        # Cập nhật trạng thái checked của các tab
+        for k, btn in self._nav_buttons.items():
+            btn.setChecked(k == key)
+
+    
+    
+    
+    
+    
+    # === Áp dụng phân quyền theo role hiện tại ===
+    def _apply_role_permissions(self) -> None:
         """
-        Khi đóng cửa sổ chính:
-        - Dừng camera worker (nếu đang chạy).
-        - Gọi closeEvent gốc của QMainWindow.
+        Ẩn / khoá các tab theo role hiện tại.
+        Nếu role không hợp lệ => coi như GUARD.
         """
-        try:
-            if hasattr(self, "stop_cam_generic"):
-                # Được định nghĩa trong CameraPageMixin
-                self.stop_cam_generic(1)
-                self.stop_cam_generic(2)
-        except Exception:
-            traceback.print_exc()
+        role = "GUARD"
+        if self.current_user and self.current_user.role:
+            role = self.current_user.role.upper()
 
-        super().closeEvent(event)
+        # Đổi title cho dễ theo dõi ai đăng nhập
+        if self.current_user is not None:
+            self.setWindowTitle(
+                f"HỆ THỐNG GIỮ XE - {self.current_user.full_name} [{role}]"
+            )
+
+        allowed = ROLE_PERMISSIONS.get(role, ROLE_PERMISSIONS["GUARD"])
+
+        # Ẩn / khoá nút theo quyền
+        for key, btn in self._nav_buttons.items():
+            can_use = key in allowed
+            btn.setVisible(can_use)
+            btn.setEnabled(can_use)
+
+        # Chọn page mặc định là page đầu tiên mà role được phép dùng
+        for prefer in ("camera", "history", "statistics", "config"):
+            if prefer in allowed and prefer in self._page_indexes:
+                self._switch_page(prefer)
+                break

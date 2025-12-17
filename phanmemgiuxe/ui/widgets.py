@@ -24,10 +24,10 @@ from PySide6.QtWidgets import (
 )
 
 
-# ======================================================================
-#  HIỆU ỨNG BÓNG (SHADOW)
-# ======================================================================
 
+
+
+# === HÀM TIỆN ÍCH THÊM SHADOW CHO QFRAME ===
 def add_shadow(frame: QFrame, blur: int = 14, alpha: int = 30, dy: int = 2) -> None:
     """
     Thêm hiệu ứng đổ bóng (shadow) cho một QFrame.
@@ -47,10 +47,11 @@ def add_shadow(frame: QFrame, blur: int = 14, alpha: int = 30, dy: int = 2) -> N
     frame.setGraphicsEffect(eff)
 
 
-# ======================================================================
-#  CARD THỐNG KÊ (StatsCard)
-# ======================================================================
 
+
+
+
+# === CARD THỐNG KÊ ===
 class StatsCard(QFrame):
     """
     Card component dùng trong trang thống kê.
@@ -70,6 +71,11 @@ class StatsCard(QFrame):
         QLabel#StatsCardTitle { ... }
     """
 
+
+
+
+
+    # === Khởi tạo card với tiêu đề ===
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("StatsCard")
@@ -90,10 +96,11 @@ class StatsCard(QFrame):
         add_shadow(self)
 
 
-# ======================================================================
-#  KPI CHIP (ô KPI lớn nổi bật)
-# ======================================================================
 
+
+
+
+# === KPI CHIP COMPONENT ===
 class KPIChip(QFrame):
     """
     Component KPI dạng "chip" (ô lớn) dùng để hiển thị số liệu nổi bật.
@@ -109,6 +116,10 @@ class KPIChip(QFrame):
         QLabel#KpiValue { ... }
     """
 
+
+
+
+    # === Khởi tạo chip với tiêu đề, giá trị và màu nền ===
     def __init__(self, title: str, value: str = "--", bg: str = "#FFFFFF",
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -136,23 +147,33 @@ class KPIChip(QFrame):
         self.setAutoFillBackground(True)
         self.setPalette(pal)
 
-    # --------------------------------------------------------------
-    #  CẬP NHẬT NỘI DUNG
-    # --------------------------------------------------------------
-
+    
+    
+    
+    
+    
+    
+    # === Cập nhật giá trị và tiêu đề ===
     def update_value(self, value: str) -> None:
         """Cập nhật giá trị hiển thị (value_label)."""
         self.value_label.setText(value)
 
+
+
+
+
+
+    # === Cập nhật tiêu đề ===
     def update_title(self, title: str) -> None:
         """Cập nhật tiêu đề hiển thị (title_label)."""
         self.title_label.setText(title)
 
 
-# ======================================================================
-#  CARD BỌC TIÊU ĐỀ + NỘI DUNG (cho camera / ảnh)
-# ======================================================================
 
+
+
+
+# === HÀM TẠO CARD CHO ẢNH/CAMERA/... ===
 def make_card(title: str, content: QWidget) -> tuple[QFrame, QLabel]:
     """
     Tạo một "card" để bọc nội dung với tiêu đề.

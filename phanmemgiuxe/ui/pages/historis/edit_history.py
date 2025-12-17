@@ -1,0 +1,610 @@
+# ui/pages/edit_history.py
+"""
+EditHistoryDialog
+
+Dialog SỬA LỊCH SỬ (2 cột: vào / ra + trạng thái + checkbox Vào/Ra).
+
+- Nhận vào:
+    + db: DB
+    + record: dict (có "ID", "Ảnh vào", "Biển số vào", ...,
+                    có thể có thêm 'session_category', 'vehicle_id', 'vehicle_type_id')
+- Tự fill dữ liệu lên form.
+- Người dùng chọn tick Vào/Ra để quyết định sửa phần nào:
+    + Tick Vào  -> cập nhật lại các cột *_in.
+    + Tick Ra   -> cập nhật lại các cột *_out.
+    + Không tick -> giữ nguyên dữ liệu cũ cho phần đó.
+- Combobox "Loại xe": Tự động / Vãng lai / Nội bộ.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Optional, Dict, Any
+
+from PySide6.QtCore import Qt, QDate, QTime, Slot
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDateEdit,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTimeEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ....database.database import (  # type: ignore[import-not-found]
+    DB,
+    SESSION_CAT_TRANSIENT,
+    SESSION_CAT_INTERNAL,
+)
+
+
+
+
+
+# === Hàm chuẩn hoá session_category trước khi ghi DB ===
+def _normalize_session_category_for_db(raw_value) -> Optional[str]:
+    """
+    Chuẩn hoá session_category trước khi ghi DB.
+
+    Bảng ParkingSessions có CHECK:
+        session_category = 'VISITOR'
+        OR session_category = 'INTERNAL'
+        OR session_category IS NULL
+
+    Hàm này nhận vào:
+        - hằng SESSION_CAT_TRANSIENT / SESSION_CAT_INTERNAL (có thể là 0/1 hoặc string)
+        - hoặc chính chuỗi 'VISITOR' / 'INTERNAL'
+    và luôn trả về chuỗi hợp lệ cho DB: 'VISITOR' / 'INTERNAL' / None.
+    """
+    if raw_value is None or raw_value == "":
+        return None
+
+    # nếu đã là string rồi
+    if isinstance(raw_value, str):
+        v = raw_value.strip().upper()
+        if v in ("VISITOR", "INTERNAL"):
+            return v
+
+    # nếu là số (0/1) thì map theo constants
+    try:
+        v_int = int(raw_value)
+    except Exception:
+        v_int = None
+
+    if v_int is not None:
+        if v_int == SESSION_CAT_INTERNAL:
+            return "INTERNAL"
+        if v_int == SESSION_CAT_TRANSIENT:
+            return "VISITOR"
+
+    # fallback an toàn
+    return None
+
+
+
+
+
+
+# === Hàm lấy key cho combobox từ session_category hiện có ===
+def _mode_from_session_category(sc_value) -> str:
+    """
+    Map giá trị session_category đang có (int, str, None)
+    sang key cho combobox: 'internal' / 'transient' / 'auto'.
+    """
+    if sc_value is None or sc_value == "":
+        return "auto"
+
+    # nếu là string từ DB
+    if isinstance(sc_value, str):
+        v = sc_value.strip().upper()
+        if v == "INTERNAL":
+            return "internal"
+        if v == "VISITOR":
+            return "transient"
+
+    # nếu là int, so với constants
+    try:
+        v_int = int(sc_value)
+    except Exception:
+        v_int = None
+
+    if v_int is not None:
+        if v_int == SESSION_CAT_INTERNAL:
+            return "internal"
+        if v_int == SESSION_CAT_TRANSIENT:
+            return "transient"
+
+    return "auto"
+
+
+
+
+
+
+# === Edit History Dialog ===
+class EditHistoryDialog(QDialog):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        db: Optional[DB] = None,
+        record: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.db = db
+        self.record = record or {}
+        self.record_id: Optional[int] = None
+
+        val = self.record.get("ID")
+        if val is None:
+            self.record_id = None
+        else:
+            self.record_id = int(val)
+
+
+        self.setWindowTitle("Sửa lượt gửi")
+        self.setModal(True)
+        self.setMinimumWidth(720)
+
+        self.setStyleSheet(
+            """
+            QDialog {
+                background-color:#ffffff;
+                color:#111827;
+            }
+
+            QLabel {
+                color:#111827;
+                font-size:13px;
+            }
+
+            /* Ô nhập / date / time / trạng thái – nền trắng, chữ đen */
+            QLineEdit, QDateEdit, QTimeEdit, QComboBox {
+                background-color:#ffffff;
+                color:#111827;
+                border:1px solid #d1d5db;
+                border-radius:4px;
+                padding:4px 6px;
+            }
+
+            QDateEdit::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: right center;
+                width:18px;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: right center;
+                width:18px;
+            }
+
+            /* Menu xổ xuống của combobox Trạng thái / Loại xe */
+            QComboBox QAbstractItemView {
+                background-color:#ffffff;
+                color:#111827;
+                border:1px solid #d1d5db;
+                selection-background-color:#e5e7eb;
+                selection-color:#111827;
+            }
+
+            /* Checkbox VÀO / RA – giữ nguyên text, dùng indicator mặc định */
+            QCheckBox {
+                spacing: 6px;
+                font-weight:600;
+                color:#111827;
+            }
+
+            /* Ẩn nút up/down của time edit như cũ */
+            QTimeEdit::up-button,
+            QTimeEdit::down-button {
+                width:0px;
+                height:0px;
+                border:none;
+            }
+            """
+        )
+
+        self._build_ui()
+        self._fill_from_record()
+        self._update_enabled()
+
+    
+    
+    
+    
+    
+    
+    # === Xây dựng giao diện ===
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(18)
+
+        # ====== TIÊU ĐỀ ======
+        title = QLabel("SỬA LƯỢT GỬI")
+        title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        title.setStyleSheet(
+            "font-size:18px; font-weight:700; letter-spacing:1px; color:#111827;"
+        )
+        root.addWidget(title)
+
+        # ====== CHỌN VÀO / RA + LOẠI XE ======
+        top_row = QHBoxLayout()
+        top_row.setSpacing(18)
+        top_row.addStretch(1)
+
+        # --- Sửa phần: Vào / Ra ---
+        chk_row = QHBoxLayout()
+        chk_row.setSpacing(8)
+
+        lbl_apply = QLabel("Sửa phần:")
+        self.chk_in = QCheckBox("Vào")
+        self.chk_out = QCheckBox("Ra")
+
+        chk_row.addWidget(lbl_apply)
+        chk_row.addWidget(self.chk_in)
+        chk_row.addWidget(self.chk_out)
+
+        # --- Loại xe ---
+        type_row = QHBoxLayout()
+        type_row.setSpacing(8)
+        lbl_type = QLabel("Loại xe:")
+        self.cmb_vehicle_mode = QComboBox()
+        self.cmb_vehicle_mode.addItem("Tự động (theo DB)", "auto")
+        self.cmb_vehicle_mode.addItem("Vãng lai", "transient")
+        self.cmb_vehicle_mode.addItem("Nội bộ", "internal")
+        self.cmb_vehicle_mode.setFixedWidth(200)
+
+        type_row.addWidget(lbl_type)
+        type_row.addWidget(self.cmb_vehicle_mode)
+
+        top_row.addLayout(chk_row)
+        top_row.addSpacing(24)
+        top_row.addLayout(type_row)
+        top_row.addStretch(1)
+
+        root.addLayout(top_row)
+
+        # ====== HAI CỘT ======
+        row = QHBoxLayout()
+        row.setSpacing(24)
+        root.addLayout(row)
+
+        # ---- CỘT VÀO ----
+        self.left_box = QWidget()
+        left_layout = QFormLayout(self.left_box)
+        left_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        left_layout.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.edt_img_in = QLineEdit()
+        btn_browse_in = QPushButton("...")
+        btn_browse_in.setFixedWidth(32)
+        hl_img_in = QHBoxLayout()
+        hl_img_in.addWidget(self.edt_img_in, 1)
+        hl_img_in.addWidget(btn_browse_in)
+        w_img_in = QWidget()
+        w_img_in.setLayout(hl_img_in)
+        left_layout.addRow("Đường dẫn ảnh (vào)", w_img_in)
+
+        self.edt_plate_in = QLineEdit()
+        left_layout.addRow("Biển số xe (vào)", self.edt_plate_in)
+
+        self.edt_date_in = QDateEdit()
+        self.edt_date_in.setCalendarPopup(True)
+        left_layout.addRow("Ngày (vào)", self.edt_date_in)
+
+        self.edt_time_in = QTimeEdit()
+        left_layout.addRow("Giờ (vào)", self.edt_time_in)
+
+        row.addWidget(self.left_box, 1)
+
+        # ---- CỘT RA ----
+        self.right_box = QWidget()
+        right_layout = QFormLayout(self.right_box)
+        right_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        right_layout.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.edt_img_out = QLineEdit()
+        btn_browse_out = QPushButton("...")
+        btn_browse_out.setFixedWidth(32)
+        hl_img_out = QHBoxLayout()
+        hl_img_out.addWidget(self.edt_img_out, 1)
+        hl_img_out.addWidget(btn_browse_out)
+        w_img_out = QWidget()
+        w_img_out.setLayout(hl_img_out)
+        right_layout.addRow("Đường dẫn ảnh (ra)", w_img_out)
+
+        self.edt_plate_out = QLineEdit()
+        right_layout.addRow("Biển số xe (ra)", self.edt_plate_out)
+
+        self.edt_date_out = QDateEdit()
+        self.edt_date_out.setCalendarPopup(True)
+        right_layout.addRow("Ngày (ra)", self.edt_date_out)
+
+        self.edt_time_out = QTimeEdit()
+        right_layout.addRow("Giờ (ra)", self.edt_time_out)
+
+        row.addWidget(self.right_box, 1)
+
+        # ====== TRẠNG THÁI ======
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        status_row.addStretch(1)
+
+        lbl_status = QLabel("Trạng thái:")
+        self.cmb_status = QComboBox()
+        self.cmb_status.addItems(["PENDING", "KHOP-BIEN-SO", "KHONG-KHOP-BIEN-SO"])
+        self.cmb_status.setFixedWidth(220)
+
+        status_row.addWidget(lbl_status)
+        status_row.addWidget(self.cmb_status)
+        status_row.addStretch(1)
+        root.addLayout(status_row)
+
+        # ====== NÚT ======
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(20)
+        btn_row.addStretch(1)
+
+        self.btn_cancel = QPushButton("Hủy")
+        self.btn_save = QPushButton("Lưu")
+        self.btn_save.setDefault(True)
+
+        self.btn_cancel.setStyleSheet(
+            "QPushButton {background-color:#e5e7eb; color:#111827; "
+            "border-radius:6px; padding:6px 18px; font-weight:500;}"
+            "QPushButton:hover {background-color:#d1d5db;}"
+        )
+        self.btn_save.setStyleSheet(
+            "QPushButton {background-color:#3b82f6; color:white; "
+            "border-radius:6px; padding:6px 18px; font-weight:600;}"
+            "QPushButton:hover {background-color:#2563eb;}"
+        )
+
+        btn_row.addWidget(self.btn_cancel)
+        btn_row.addWidget(self.btn_save)
+        btn_row.addStretch(1)
+        root.addLayout(btn_row)
+
+        # connect
+        btn_browse_in.clicked.connect(self._on_browse_in)
+        btn_browse_out.clicked.connect(self._on_browse_out)
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_save.clicked.connect(self._on_save_clicked)
+        self.chk_in.toggled.connect(self._update_enabled)
+        self.chk_out.toggled.connect(self._update_enabled)
+
+    
+    
+    
+    
+    
+    # === Điền dữ liệu từ record vào form fields ===
+    def _fill_from_record(self) -> None:
+        r = self.record
+
+        self.edt_img_in.setText(str(r.get("Ảnh vào", "") or ""))
+        self.edt_plate_in.setText(str(r.get("Biển số vào", "") or ""))
+        self.edt_img_out.setText(str(r.get("Ảnh ra", "") or ""))
+        self.edt_plate_out.setText(str(r.get("Biển số ra", "") or ""))
+        
+        # == Parse date / time ==
+        def parse_date(val: str) -> QDate:
+            d = QDate.fromString(val, "dd/MM/yyyy")
+            return d if d.isValid() else QDate.currentDate()
+
+        # == Parse time ==
+        def parse_time(val: str) -> QTime:
+            t = QTime.fromString(val, "HH:mm:ss")
+            return t if t.isValid() else QTime.currentTime()
+
+        self.edt_date_in.setDate(parse_date(str(r.get("Ngày vào", ""))))
+        self.edt_time_in.setTime(parse_time(str(r.get("Giờ vào", ""))))
+        self.edt_date_out.setDate(parse_date(str(r.get("Ngày ra", ""))))
+        self.edt_time_out.setTime(parse_time(str(r.get("Giờ ra", ""))))
+
+        status = str(r.get("Trạng thái", "") or "").upper()
+        if status not in ["PENDING", "KHOP-BIEN-SO", "KHONG-KHOP-BIEN-SO"]:
+            status = "PENDING"
+        idx = self.cmb_status.findText(status)
+        if idx >= 0:
+            self.cmb_status.setCurrentIndex(idx)
+
+        has_in = any(
+            [
+                r.get("Biển số vào"),
+                r.get("Ngày vào"),
+                r.get("Giờ vào"),
+                r.get("Ảnh vào"),
+            ]
+        )
+        has_out = any(
+            [
+                r.get("Biển số ra"),
+                r.get("Ngày ra"),
+                r.get("Giờ ra"),
+                r.get("Ảnh ra"),
+            ]
+        )
+
+        if not has_in and not has_out:
+            has_in = True  # fallback
+
+        self.chk_in.setChecked(bool(has_in))
+        self.chk_out.setChecked(bool(has_out))
+
+        # ---- Loại xe (session_category) ----
+        session_category = self.record.get("session_category", None)
+        key = _mode_from_session_category(session_category)
+
+        idx_mode = self.cmb_vehicle_mode.findData(key)
+        if idx_mode >= 0:
+            self.cmb_vehicle_mode.setCurrentIndex(idx_mode)
+
+    
+    
+    
+    
+    
+    # === Cập nhật trạng thái enabled/disabled của các phần VÀO / RA ===
+    def _update_enabled(self) -> None:
+        self.left_box.setEnabled(self.chk_in.isChecked())
+        self.right_box.setEnabled(self.chk_out.isChecked())
+
+
+
+
+
+    # === Chuẩn hoá đường dẫn ảnh ===
+    def _normalize_path(self, path: str) -> str:
+        path = (path or "").strip()
+        if not path:
+            return ""
+        return os.path.abspath(path)
+
+    
+    
+    
+    
+    
+    # === Nút Browse ảnh vào / ra ===
+    @Slot()
+    def _on_browse_in(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Chọn ảnh vào", "", "Image Files (*.png *.jpg *.jpeg *.bmp)"
+        )
+        if path:
+            self.edt_img_in.setText(path)
+
+
+
+
+
+
+    # === Nút Browse ảnh vào / ra ===
+    @Slot()
+    def _on_browse_out(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Chọn ảnh ra", "", "Image Files (*.png *.jpg *.jpeg *.bmp)"
+        )
+        if path:
+            self.edt_img_out.setText(path)
+
+
+
+
+
+
+    # === Nút Lưu ===
+    @Slot()
+    def _on_save_clicked(self) -> None:
+        if not (self.db and getattr(self.db, "ok", False)):
+            QMessageBox.warning(self, "Sửa", "Chưa kết nối DB, không thể lưu.")
+            return
+
+        if self.record_id is None:
+            QMessageBox.warning(self, "Sửa", "Không xác định được ID bản ghi.")
+            return
+
+        if not self.chk_in.isChecked() and not self.chk_out.isChecked():
+            QMessageBox.warning(self, "Sửa", "Hãy chọn VÀO và/hoặc RA để sửa.")
+            return
+
+        new_record = dict(self.record)
+
+        # ----- PHẦN VÀO -----
+        if self.chk_in.isChecked():
+            plate_in = self.edt_plate_in.text().strip()
+            if not plate_in:
+                QMessageBox.warning(self, "Sửa", "Vui lòng nhập BIỂN SỐ XE (vào).")
+                return
+
+            new_record["Ảnh vào"] = self._normalize_path(self.edt_img_in.text())
+            new_record["Biển số vào"] = plate_in
+            new_record["Ngày vào"] = self.edt_date_in.date().toString("dd/MM/yyyy")
+            new_record["Giờ vào"] = self.edt_time_in.time().toString("HH:mm:ss")
+
+        # ----- PHẦN RA -----
+        if self.chk_out.isChecked():
+            plate_out = self.edt_plate_out.text().strip()
+            if not plate_out:
+                QMessageBox.warning(self, "Sửa", "Vui lòng nhập BIỂN SỐ XE (ra).")
+                return
+
+            new_record["Ảnh ra"] = self._normalize_path(self.edt_img_out.text())
+            new_record["Biển số ra"] = plate_out
+            new_record["Ngày ra"] = self.edt_date_out.date().toString("dd/MM/yyyy")
+            new_record["Giờ ra"] = self.edt_time_out.time().toString("HH:mm:ss")
+
+        # Trạng thái
+        status = self.cmb_status.currentText().strip() or "PENDING"
+        new_record["Trạng thái"] = status
+        
+        plate_for_lookup = (
+            new_record.get("Biển số vào") or new_record.get("Biển số ra") or ""
+        ).strip()
+
+        mode = self.cmb_vehicle_mode.currentData()  
+
+        session_category_raw = new_record.get("session_category", SESSION_CAT_TRANSIENT)
+        vehicle_id = new_record.get("vehicle_id")
+        vehicle_type_id = new_record.get("vehicle_type_id")
+
+        if mode == "transient":
+            session_category_raw = SESSION_CAT_TRANSIENT
+            vehicle_id = None
+            vehicle_type_id = None
+
+        elif mode == "internal":
+            session_category_raw = SESSION_CAT_INTERNAL
+            vehicle_id = None
+            vehicle_type_id = None
+            if plate_for_lookup and hasattr(self.db, "get_vehicle_by_plate"):
+                vinfo = self.db.get_vehicle_by_plate(plate_for_lookup)
+                if vinfo:
+                    vehicle_id = vinfo["id"]
+                    vehicle_type_id = vinfo["vehicle_type_id"]
+
+        elif mode == "auto":
+            if plate_for_lookup and hasattr(self.db, "get_vehicle_by_plate"):
+                vinfo = self.db.get_vehicle_by_plate(plate_for_lookup)
+                if vinfo:
+                    session_category_raw = SESSION_CAT_INTERNAL
+                    vehicle_id = vinfo["id"]
+                    vehicle_type_id = vinfo["vehicle_type_id"]
+                else:
+                    session_category_raw = SESSION_CAT_TRANSIENT
+                    vehicle_id = None
+                    vehicle_type_id = None
+
+        # chuẩn hoá trước khi ghi DB
+        session_category_db = _normalize_session_category_for_db(session_category_raw)
+
+        new_record["session_category"] = session_category_db
+        new_record["vehicle_id"] = vehicle_id
+        new_record["vehicle_type_id"] = vehicle_type_id
+
+        if not hasattr(self.db, "update_history_record"):
+            QMessageBox.warning(
+                self,
+                "Sửa",
+                "DB chưa có hàm update_history_record(id, record).\n"
+                "Hãy thêm method này trong lớp DB.",
+            )
+            return
+
+        try:
+            self.db.update_history_record(self.record_id, new_record)  # type: ignore[attr-defined]
+        except Exception as e:
+            QMessageBox.warning(self, "Sửa", f"Lỗi khi cập nhật DB:\n{e}")
+            return
+
+        QMessageBox.information(self, "Sửa", "Đã cập nhật bản ghi lịch sử.")
+        self.accept()

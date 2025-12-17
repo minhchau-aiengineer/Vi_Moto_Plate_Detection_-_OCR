@@ -1,3 +1,21 @@
 {
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticMode": "openFilesOnly",
+    "python.analysis.useLibraryCodeForTypes": true,
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportOptionalMemberAccess": "none",
+        "reportAttributeAccessIssue": "warning",
+        "reportArgumentType": "warning"
+    },
+    "python.formatting.provider": "none",
+    "editor.formatOnSave": true,
+    "ruff.enable": true,
+    "ruff.organizeImports": true,
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/.pytest_cache": true,
+        "**/.venv": true
+    },
     "cmake.sourceDirectory": "C:/Users/Admin/Documents/IUH_Student/OCR/ultralytics/examples/YOLO11-Triton-CPP"
 }
